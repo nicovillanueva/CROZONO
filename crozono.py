@@ -310,13 +310,13 @@ def get_iface():
 	airmon_output = proc.communicate()[0].split('\n')
 	airmon_columns_interface_position = 0
 	for line in airmon_output:
-		if "Interface" in line:
+		if line.find("Interface") != -1:
 			airmon_columns_interface_position = line.split().index("Interface")
-		if "phy0" in line:
+		if line.find("phy") != -1:
 			devices.append(line.split()[airmon_columns_interface_position])
 
 	for iface in devices:
-		if "mon" in iface:
+		if iface.find("mon") != -1:
 			call(['airmon-ng', 'stop', iface], stdout=DN, stderr=DN)
 			devices.append(iface[:-3])
 
