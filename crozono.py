@@ -234,11 +234,15 @@ def scan_targets(iface_mon,essid_predefined):
 			elif line.startswith('Station'): break
 			else:
 				data = line.split(',')
-				if data[13] != '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00':
+				if data[13].find('\x00') == -1:
 					APs_list.append([data[0],data[3],data[5],data[6],data[7],data[8],data[9],data[13]]) 
 		#0:BSSID-0, 3:channel-1, 5:Privacy-2, 6:Cipher-3, 7:Auth-4, 8:Power-5, 9:Beacons-6, 13:ESSID-7
 		csv.close()
 		APs_list = sorted(APs_list,key = lambda x: x[5]) #APs sorted by the nearest
+
+		if not APs_list:
+			print("  [-] No WiFi access points in range!")
+			exit()
 
 		APs_nearest = []
 		#Get the first two nearest APs:	
@@ -274,9 +278,9 @@ def enable_mode_monitor(iface):
 	proc = Popen(['iwconfig'], stdout=PIPE, stderr=DN)
 
 	for line in proc.communicate()[0].split('\n'):
-		if line.find('Mode:Monitor') != -1:		
-			iface_mon = line[:len(iface)+3]
-			return iface_mon.strip()
+		if line.find('Mode:Monitor') != -1:
+			iface_mon = line.split()[0]
+			return iface_mon
 
 def get_gateway():
 	gateway = []
@@ -302,15 +306,25 @@ def get_gateway():
 def get_iface():
 	devices = []
 	proc = Popen(['airmon-ng'], stdout=PIPE, stderr=DN)
+ 
+	airmon_output = proc.communicate()[0].split('\n')
+	airmon_columns_interface_position = 0
+	for line in airmon_output:
+		if "Interface" in line:
+			airmon_columns_interface_position = line.split().index("Interface")
+		if "phy0" in line:
+			devices.append(line.split()[airmon_columns_interface_position])
 
-	for line in proc.communicate()[0].split('\n'):
-		if len(line) == 0 or line.startswith('Interface') or line.startswith('PHY'): continue
-		devices.append(line)
+	for iface in devices:
+		if "mon" in iface:
+			call(['airmon-ng', 'stop', iface], stdout=DN, stderr=DN)
+			devices.append(iface[:-3])
 
-	if devices[0].find("phy0") != -1:
-		split_devices = devices[0].split('\t')
-		iface = split_devices[1]
-		return iface
+	if not devices:
+		print("  [-] No devices available!")
+		exit()
+	
+	return devices.pop()
 
 def hardware_setup():
 	print("  [+] Setting the hardware configuration... (MAC address changed)")			
