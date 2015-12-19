@@ -1,3 +1,4 @@
 deploy_to_docker.sh
-
+__pycache__/
+venv/
 .idea
