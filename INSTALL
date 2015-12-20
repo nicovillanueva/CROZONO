@@ -14,8 +14,7 @@ CROZONO has been developed to run in Raspberry PI. Use Raspbian or Kali Linux (f
 
 INSTALL:
 
-- pexpect (python library)
-CROZONO need pexpect python library to run correctly.
+install requirements.txt
 
 If you want to use the full crozono's attacks, you must install the following tools:
 
