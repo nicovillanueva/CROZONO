@@ -40,6 +40,7 @@ OS_PATH = os.getcwd()
 LOG_FILE = OS_PATH+'/log_temp'
 DN = open(os.devnull, 'w')
 
+
 ## ATTACKS TIME ##
 AIRODUMP_SCAN_TIME = 30
 WEP_AIREPLAY_TIME = 300
