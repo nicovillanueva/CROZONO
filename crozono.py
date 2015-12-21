@@ -55,7 +55,7 @@ def get_target_mitm(gateway,ip_crozono):
 	for line in nmap_report:
 		if line.startswith('Nmap scan report for'):
 			ip_start = None
-			ip_start = line.find(list(filter(lambda x: str(x) in line, range(192,223)))[0])
+			ip_start = line.find(list(filter(lambda x: str(x) in line, list(192, 172, 10)))[0])
 			if ip_start != -1:
 				targets.append(line[ip_start:60].replace(")"," ").strip())
 	if gateway in targets:
