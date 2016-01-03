@@ -73,15 +73,16 @@ def connect(essid, key, iface_mon=None):
 	sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 	tries = 0
 
+	if iface_mon is not None:
+			call(['airmon-ng', 'stop', iface_mon], stdout=DN, stderr=DN)
+			time.sleep(1)
+
 	iface = get_ifaces()[0]
 
 	def do_connect():
 		nonlocal sock
 		nonlocal tries
 		info("Connecting to '{0}' with key '{1}'".format(essid, key if key is not None else ''))
-		if iface_mon is not None:
-			call(['airmon-ng', 'stop', iface_mon], stdout=DN, stderr=DN)
-			time.sleep(1)
 
 		cmd_connect = pexpect.spawn('iwconfig {0} essid "{1}" key s:{2}'.format(iface, essid, key))
 		cmd_connect.logfile = open(LOG_FILE, 'wb')
