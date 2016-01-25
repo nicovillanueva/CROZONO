@@ -1,6 +1,7 @@
 import random
 import subprocess
-from poormanslogging import info, error, warn
+import time
+from poormanslogging import info, error
 
 
 def mac_changer(iface_mon):
@@ -25,15 +26,26 @@ def check_interfering_processes(kill=True):
 def toggle_mode_monitor(iface, setting=True):
 	check_interfering_processes(kill=True)
 	subprocess.Popen(['airmon-ng', 'start' if setting else 'stop', iface], stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
-	proc = subprocess.Popen(['iwconfig'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+	time.sleep(1)
+	mon = is_interface_monitor(iface)
+	if setting and mon:
+		info("Successfully set {i} in monitor mode.".format(i=iface))
+		return iface
+	elif not setting and mon:
+		e = "Could not disable monitor mode for interface {i}".format(i=iface)
+		error(e)
+		raise ValueError(e)
+	elif setting and not mon:
+		e = "Could not set monitor mode for interface {i}!".format(i=iface)
+		error(e)
+		raise ValueError(e)
 
-	for line in proc.communicate()[0].decode().split('\n'):
-		if 'Mode:Monitor' in line:
-			iface_mon = line.split()[0]
-			return iface_mon
-		else:
-			error("Could not set interface in monitor mode!")
-			exit()
+
+def is_interface_monitor(iface):
+	grep = subprocess.Popen(['grep', '"Mode:"'], stdout=subprocess.PIPE)
+	iwc = subprocess.Popen(['iwconfig', iface], stdout=grep, stderr=subprocess.DEVNULL)
+	s = iwc.communicate()[0].decode()
+	return "Monitor" in s
 
 
 def get_gateway():
