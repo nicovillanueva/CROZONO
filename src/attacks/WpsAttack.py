@@ -17,7 +17,7 @@ class WpsAttack(WirelessAttack):
 			os.remove(settings.LOG_FILE)
 			return len(found) > 0
 
-	def attack(self, channel, bssid):
+	def perform(self, channel, bssid):
 		def scan_logfile(pattern):
 			with open(settings.LOG_FILE, 'r') as f:
 				l = f.readlines()
